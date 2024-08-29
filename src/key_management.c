@@ -1,5 +1,7 @@
 #include "../include/ft_otp.h"
 
+#define PBKDF2_ITERATIONS 10000
+
 static const unsigned char MAGIC_BYTES[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
 int generate_key(unsigned char *key, size_t key_size, ErrorDetails *err) {
@@ -121,12 +123,28 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 		set_error(err, ERROR_RANDOM_GENERATION, error_string);
 		return -1;
 	}
+	////
+	printf("\nDEBUG: salt: ");
+	for(int i = 0; i < SALT_SIZE; i++) printf("%02x", salt[i]);
+	printf("\nDEBUG: IV: ");
+	for(int i = 0; i < IV_SIZE; i++) printf("%02x", iv[i]);
+	printf("\n");
+	////
 
 	// Deriv key from password
-	if (PKCS5_PBKDF2_HMAC(password, password_len, salt, SALT_SIZE, 10000, EVP_sha256(), 32, key_derived) != 1) {
-		set_error(err, ERROR_KEY_DERIVATION, "Failed to derive key from password");
+	if (PKCS5_PBKDF2_HMAC(password, password_len, salt, SALT_SIZE, PBKDF2_ITERATIONS, EVP_sha256(), 32, key_derived) != 1) {
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_KEY_DERIVATION, error_string);
 		return -1;
 	}
+
+	////
+	printf("DEBUG: Derived key: ");
+	for(int i = 0; i < 32; i++) printf("%02x", key_derived[i]);
+	printf("\n");
+	////
 
 	ctx = EVP_CIPHER_CTX_new(); // to b freed
 	if (!ctx) {
@@ -135,7 +153,11 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 	}
 
 	if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key_derived, iv) != 1) {
-		set_error(err, ERROR_ENCRYPT_ERROR, "Failed to initialize encrytion inside EVP_Encryption, encrypt_key function");
+		printf("DEBUG: Cipher: %s\n", EVP_CIPHER_name(EVP_aes_256_cbc()));
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_ENCRYPT_ERROR, error_string);
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
 	}
@@ -149,7 +171,10 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 	*encrypted_data_len += IV_SIZE;
 
 	if (EVP_EncryptUpdate(ctx, encrypted_data + *encrypted_data_len, &len, key, key_size) != 1) {
-		set_error(err, ERROR_ENCRYPT_ERROR, "Failed to eencrypt data");
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_ENCRYPT_ERROR, error_string);
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
 	}
@@ -157,7 +182,10 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 	*encrypted_data_len += len;
 
 	if (EVP_EncryptFinal_ex(ctx, encrypted_data + *encrypted_data_len, &final_len) != 1) {
-		set_error(err, ERROR_ENCRYPT_ERROR, "Failed to finalize encryption");
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_ENCRYPT_ERROR, error_string);
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
 	}
@@ -208,14 +236,28 @@ int decrypt_key(const unsigned char *encrypted_data, size_t encrypted_data_len,
 	memcpy(salt, encrypted_data + sizeof(MAGIC_BYTES), SALT_SIZE);
 	memcpy(iv, encrypted_data + sizeof(MAGIC_BYTES) + SALT_SIZE, IV_SIZE);
 
+	////
+	printf("DEBUG: Extracted Salt: ");
+	for(int i = 0; i < SALT_SIZE; i++) printf("%02x",salt[i]);
+	printf("\nDEBUG: Extracted IV: ");
+	for(int i = 0; i < IV_SIZE; i++) printf("%02x", iv[i]);
+	printf("\n");
+	////
+
 	// derive key froom password
-	if (PKCS5_PBKDF2_HMAC(password, password_len, salt, SALT_SIZE, 1000, EVP_sha256(), 32, key_derived) != 1) {
+	if (PKCS5_PBKDF2_HMAC(password, password_len, salt, SALT_SIZE, PBKDF2_ITERATIONS, EVP_sha256(), 32, key_derived) != 1) {
 		unsigned long openssl_error = ERR_get_error();
 		char error_string[256]; // buffer fort storing open ssl error
 		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
 		set_error(err, ERROR_KEY_DERIVATION, error_string);
 		return -1;
 	}
+
+	////
+	printf("DEBUG: derived key: ");
+	for(int i = 0; i < 32; i++) printf("%02x", key_derived[i]);
+	printf("\n");
+	////
 
 	// creaate and initialize the decryption context
 	ctx = EVP_CIPHER_CTX_new(); // remember to free
@@ -225,13 +267,37 @@ int decrypt_key(const unsigned char *encrypted_data, size_t encrypted_data_len,
 	}
 
 	if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key_derived, iv) != 1) {
-		set_error(err, ERROR_DECRYPT_INIT, "Failed to initialize decryption");
+		printf("DEBUG: Cipher: %s\n", EVP_CIPHER_name(EVP_aes_256_cbc()));
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_DECRYPT_INIT, error_string);
+		printf("error inside EVP_DecryptInit_ex \n");
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
 	}
+	if (encrypted_data_len - sizeof(MAGIC_BYTES) - SALT_SIZE - IV_SIZE > INT_MAX) {
+		set_error(err, ERROR_BUFFER_OVERFLOW, "encrypted data too large");
+		return -1;
+	}
+
+
+	////
+	uint32_t stored_crc;
+	uint32_t calculated_crc;
+	memcpy(&stored_crc, encrypted_data + encrypted_data_len - sizeof(uint32_t), sizeof(uint32_t));
+	calculated_crc = crc32(0L, encrypted_data + encrypted_data_len - sizeof(uint32_t), sizeof(uint32_t));
+	if (stored_crc != calculated_crc) {
+		set_error(err, ERROR_INTEGRITY_CHECK, "Ciphertext integrity check failed");
+		return -1;
+	}
+	////
 
 	// decrypt the data
 	if (EVP_DecryptUpdate(ctx, key, &len, encrypted_data + sizeof(MAGIC_BYTES) + SALT_SIZE + IV_SIZE, encrypted_data_len - sizeof(MAGIC_BYTES) - SALT_SIZE - IV_SIZE) != 1) {
+		unsigned long openssl_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssl_error, error_string, sizeof(error_string));
 		set_error(err, ERROR_DECRYPT_UPDATE, "failed to decrypt data");
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
@@ -241,7 +307,11 @@ int decrypt_key(const unsigned char *encrypted_data, size_t encrypted_data_len,
 
 	// finalize the decryptioon
 	if (EVP_DecryptFinal_ex(ctx, key + len, &final_len) != 1) {
-		set_error(err, ERROR_DECRYPT_FINAL, "failed to initialize encryption inside EVP_DecryptFinal_ex, decrypt key");
+		
+		unsigned long openssel_error = ERR_get_error();
+		char error_string[256];
+		ERR_error_string_n(openssel_error, error_string, sizeof(error_string));
+		set_error(err, ERROR_DECRYPT_FINAL, error_string);
 		EVP_CIPHER_CTX_free(ctx);
 		return -1;
 	}

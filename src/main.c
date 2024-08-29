@@ -77,6 +77,7 @@ void test_key_management() {
 	unsigned char decrypted_key[KEY_SIZE];
 	size_t decrypted_key_size;
 	const char *password = "testpassword";
+	size_t password_len = strlen(password);
 	// const char *filename = "test_key.enc";
 	ErrorDetails err = {ERROR_NONE, ""};
 
@@ -95,14 +96,14 @@ void test_key_management() {
 	printf("key validated successfully");
 
 	// test enrcyption
-	if(encrypt_key(key, KEY_SIZE, password, strlen(password), encrypted_data, &encrypted_data_len, &err) != 0) {
+	if(encrypt_key(key, KEY_SIZE, password, password_len, encrypted_data, &encrypted_data_len, &err) != 0) {
 		handle_error(&err);
 		return;
 	}
 	printf("key encrypted successfully. encrypted data length %zu\n", encrypted_data_len);
 
 	// test decryption
-	if(decrypt_key(encrypted_data, encrypted_data_len, password, strlen(password), decrypted_key, &decrypted_key_size,  &err) != 0) {
+	if(decrypt_key(encrypted_data, encrypted_data_len, password, password_len, decrypted_key, &decrypted_key_size,  &err) != 0) {
 		handle_error(&err);
 		return;
 	}

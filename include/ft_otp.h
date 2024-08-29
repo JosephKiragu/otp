@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <zlib.h>
 
 
 
@@ -27,6 +28,7 @@
 #define SALT_SIZE 16
 #define IV_SIZE 16
 #define KEY_FILE_MODE (S_IRUSR | S_IWUSR)
+
 
 
 //-------
@@ -43,6 +45,7 @@ typedef enum {
 	ERROR_HOTP_GENERATION_FAILED,
 	ERROR_IMPL_ERROR,
 	ERROR_FUNC_ERROR,
+	ERROR_BUFFER_OVERFLOW,
 	//Key manmagemennt enccyrption eerrors
 	ERROR_RANDOM_GENERATION,
 	ERROR_KEY_DERIVATION,
@@ -61,7 +64,8 @@ typedef enum {
 	ERROR_FILE_SYNC,
 	ERROR_FILE_READ,
 	ERROR_FILE_STAT,
-	ERROR_BUFFER_TOO_SMALL
+	ERROR_BUFFER_TOO_SMALL,
+	ERROR_INTEGRITY_CHECK
 
 } ErrorCode;
 //-------
