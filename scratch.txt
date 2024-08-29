@@ -1,0 +1,57 @@
+double calculate_shannon_entropy(const unsigned char *data, size_t data_size) {
+	    int frequency[256] = {0};
+	    double entropy = 0.0;
+	
+	    // Count frequency of each byte
+	    for (size_t i = 0; i < data_size; i++) {
+	        frequency[data[i]]++;
+	    }
+	
+	    // Calculate entropy
+	    for (int i = 0; i < 256; i++) {
+	        if (frequency[i] > 0) {
+	            double p = (double)frequency[i] / data_size;
+	            entropy -= p * log2(p);
+	        }
+	    }
+	
+	    return entropy;
+	}
+	
+	int validate_key(const unsigned char *key, size_t key_size, ErrorDetails *err) {
+	    // Initial state: Key to be validated
+	    
+	    // Transformation: Check key size
+	    if (key_size != KEY_SIZE) {
+	        set_error(err, ERROR_INVALID_KEY_SIZE, "Invalid key size");
+	        return -1;
+	    }
+	    
+	    // Simple zero-byte check
+	    int zero_bytes = 0;
+	    for (size_t i = 0; i < key_size; i++) {
+	        if (key[i] == 0) {
+	            zero_bytes++;
+	        }
+	    }
+	    
+	    // Check for too many zero bytes
+	    if (zero_bytes > key_size / 4) {  // More than 25% zeros
+	        set_error(err, ERROR_LOW_KEY_ENTROPY, "Key has too many zero bytes");
+	        return -1;
+	    }
+	
+	    // Shannon entropy check
+	    double entropy = calculate_shannon_entropy(key, key_size);
+	    double max_entropy = log2(256);  // Maximum entropy for byte values
+	    double entropy_ratio = entropy / max_entropy;
+	
+	    // Check if entropy is too low (you can adjust this threshold)
+	    if (entropy_ratio < 0.75) {  // Less than 75% of maximum entropy
+	        set_error(err, ERROR_LOW_KEY_ENTROPY, "Key has low Shannon entropy");
+	        return -1;
+	    }
+	
+	    // Final state: Validation result (0 for valid, -1 for invalid)
+	    return 0;
+	}
