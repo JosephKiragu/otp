@@ -72,13 +72,13 @@ void test_totp() {
 
 void test_key_management() {
 	unsigned char key[KEY_SIZE];
-	unsigned char encrypted_data[1024];
+	unsigned char encrypted_data[256];
 	size_t encrypted_data_len = sizeof(encrypted_data);
 	unsigned char decrypted_key[KEY_SIZE];
 	size_t decrypted_key_size;
 	const char *password = "testpassword";
 	size_t password_len = strlen(password);
-	// const char *filename = "test_key.enc";
+	const char *filename = "test_key.enc";
 	ErrorDetails err = {ERROR_NONE, ""};
 
 	// test key generation
@@ -93,7 +93,12 @@ void test_key_management() {
 		handle_error(&err);
 		return;
 	}
-	printf("key validated successfully");
+	printf("key validated successfully\n");
+	printf("DEBUG: Original key: ");
+	for (int i = 0; i < KEY_SIZE; i++) {
+		printf("%02x", key[i]);
+	}
+	printf("\n");
 
 	// test enrcyption
 	if(encrypt_key(key, KEY_SIZE, password, password_len, encrypted_data, &encrypted_data_len, &err) != 0) {
@@ -107,16 +112,41 @@ void test_key_management() {
 		handle_error(&err);
 		return;
 	}
+	printf("DEBUG: Decrypted key: ");
+	for (int i = 0; i < (int)decrypted_key_size; i++) {
+		printf("%02x", decrypted_key[i]);
+	}
+	printf("\n");
 	printf("key decrypted successfully. Deccrypted key size : %zu\n", decrypted_key_size);
 
 	assert(decrypted_key_size == KEY_SIZE);
 	assert(memcmp(key, decrypted_key, KEY_SIZE) == 0);
 	printf("decrypted key matches original key\n");
-	return;
+
+
+	// Test file I/O
+	if (save_encrypted_key(filename, encrypted_data, encrypted_data_len, &err) != 0) {
+		handle_error(&err);
+		return;
+	}
+	printf("encrypted key saved to file successfully\n");
+
+	unsigned char loaded_data[1024];
+	size_t loaded_data_len = sizeof(loaded_data);
+	if(load_encrypted_key(filename, loaded_data, &loaded_data_len, &err) != 0) {
+		handle_error(&err);
+		return;
+	}
+
+	printf("encrypted key laoded from file successfully. loaded data length: %zu\n", loaded_data_len);
+
+	assert(memcmp(encrypted_data, loaded_data, encrypted_data_len) == 0);
+	printf("loaded data matches original encrypted data.\n");
 
 
 	// clean up
-	// remove(filename)
+	remove(filename);
+	printf("all key mangement tests passsed!\n");
 }
 
 int main() {

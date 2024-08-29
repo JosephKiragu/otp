@@ -2,6 +2,7 @@
 
 #define PBKDF2_ITERATIONS 10000
 
+
 static const unsigned char MAGIC_BYTES[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
 int generate_key(unsigned char *key, size_t key_size, ErrorDetails *err) {
@@ -88,7 +89,7 @@ int validate_key(const unsigned char *key, size_t key_size, ErrorDetails *err) {
 	printf("\nencryption entropy is : %.2f\n\n", entropy_ratio);
 
 	// check if entroppy is too low 
-	if (entropy_ratio < 0.50) { // less than 75% of maximum entropy. FIND OUT WHY 75 FAILED
+	if (entropy_ratio < 0.50) { // less than 75% of maximum entropy. FIND OUT WHY 75 FAILED. HOW TO INCREASE ENTROPY	
 		set_error(err, ERROR_LOW_KEY_ENTROPY, "Key has low shannoon entropy");
 		return -1;
 	}
@@ -115,6 +116,17 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 	unsigned char key_derived[32];// buffer foor storing the encryptd key
 	int len, final_len;
 
+	// calculate required buffer size
+	size_t required_size = sizeof(MAGIC_BYTES) + SALT_SIZE + IV_SIZE + key_size + EVP_MAX_BLOCK_LENGTH + HMAC_SIZE;
+
+	printf("DEBUG: initial buffer size: %zu\n", *encrypted_data_len);
+	printf("DEBUG: required size: %zu\n", required_size);
+	// check if provided buffer is lrge enough
+	if (*encrypted_data_len < required_size) {
+		set_error(err, ERROR_BUFFER_TOO_SMALL, "encryptted data buffer is small");
+		return -1;
+	}
+
 	// generate salt and IV
 	if (RAND_bytes(salt, SALT_SIZE) != 1 || RAND_bytes(iv, IV_SIZE) != 1) {
 		unsigned long openssl_error = ERR_get_error();
@@ -139,6 +151,7 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 		set_error(err, ERROR_KEY_DERIVATION, error_string);
 		return -1;
 	}
+
 
 	////
 	printf("DEBUG: Derived key: ");
@@ -191,6 +204,25 @@ int encrypt_key(const unsigned char *key, size_t key_size, const char *password,
 	}
 
 	*encrypted_data_len += final_len;
+
+
+	// calculate HMAC of the encryppted data
+	printf("DEBUG: size after encryption: %zu\n", *encrypted_data_len);
+	unsigned char hmac[HMAC_SIZE];
+	unsigned int hmac_len;
+	HMAC(EVP_sha256(), key_derived, 32, encrypted_data, *encrypted_data_len, hmac, &hmac_len);
+
+	// ensure there is enough space for the HMAC
+	if (*encrypted_data_len + HMAC_SIZE > required_size) {
+		set_error(err, ERROR_BUFFER_OVERFLOW, "buffer overflow before appending hmac to encrypted data");
+		return -1;
+	}
+
+	// append HMAC to the encrypted data
+	memcpy(encrypted_data + *encrypted_data_len, hmac, HMAC_SIZE);
+	*encrypted_data_len += HMAC_SIZE;
+	printf("DEBUG: final encrypted size with HMAC: %zu\n", *encrypted_data_len);
+
 
 	// finl state: Encrypted key data
 	EVP_CIPHER_CTX_free(ctx);
@@ -282,16 +314,23 @@ int decrypt_key(const unsigned char *encrypted_data, size_t encrypted_data_len,
 	}
 
 
-	////
-	uint32_t stored_crc;
-	uint32_t calculated_crc;
-	memcpy(&stored_crc, encrypted_data + encrypted_data_len - sizeof(uint32_t), sizeof(uint32_t));
-	calculated_crc = crc32(0L, encrypted_data + encrypted_data_len - sizeof(uint32_t), sizeof(uint32_t));
-	if (stored_crc != calculated_crc) {
-		set_error(err, ERROR_INTEGRITY_CHECK, "Ciphertext integrity check failed");
+
+	// verifying hmacc before decryption
+	if (encrypted_data_len < HMAC_SIZE) {
+		set_error(err, ERROR_INVALID_DATA_SIZE, "encrypted data too short");
 		return -1;
 	}
-	////
+	unsigned char calculated_hmac[HMAC_SIZE];
+	unsigned int hmac_len;
+	HMAC(EVP_sha256(), key_derived, 32, encrypted_data, encrypted_data_len - HMAC_SIZE, calculated_hmac, &hmac_len);
+
+	if(memcmp(calculated_hmac, encrypted_data + encrypted_data_len - HMAC_SIZE, HMAC_SIZE) != 0) {
+		set_error(err, ERROR_INTEGRITY_CHECK, "HMAC verification failed");
+		return -1;
+	}
+	printf("DEBUG: hmac verified successfully\n");
+
+	encrypted_data_len -= HMAC_SIZE;
 
 	// decrypt the data
 	if (EVP_DecryptUpdate(ctx, key, &len, encrypted_data + sizeof(MAGIC_BYTES) + SALT_SIZE + IV_SIZE, encrypted_data_len - sizeof(MAGIC_BYTES) - SALT_SIZE - IV_SIZE) != 1) {

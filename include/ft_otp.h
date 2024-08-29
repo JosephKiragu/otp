@@ -28,7 +28,7 @@
 #define SALT_SIZE 16
 #define IV_SIZE 16
 #define KEY_FILE_MODE (S_IRUSR | S_IWUSR)
-
+#define HMAC_SIZE 32
 
 
 //-------
